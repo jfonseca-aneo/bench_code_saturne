@@ -1,0 +1,5 @@
+DATA/mesh_input.csm
+sources/*.tar.gz
+sources/*.tar.bz2
+F128_04/RESU/
+SRC_04/cs_solver
