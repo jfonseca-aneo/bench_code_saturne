@@ -186,12 +186,23 @@ else
         -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DHDF5_BUILD_FORTRAN=ON -DHDF5_ENABLE_PARALLEL=ON
 fi
 
+# HDF5_ROOT (the CMake-standard <PackageName>_ROOT variable, CMP0074) is
+# honored automatically, at the HIGHEST priority, by every find_package(HDF5
+# ...) call -- including MED's own two internal ones and CGNS's plain one --
+# regardless of any PATHS hint they pass themselves. Without it, a
+# find_package(HDF5) whose own hints don't resolve (e.g. MED's, which
+# hardcodes an outdated "share/cmake/hdf5" config layout) silently falls
+# through to CMake's built-in system path list, which includes bare "/opt"
+# and glob-matches ANY unrelated "/opt/hdf5*" install found there (e.g. the
+# SEM3D one from install_sem3d_nvhpc.sh) instead of failing loudly.
+
 # Install CGNS
-install_mpi_cmake_package "$SOURCES_DIR" CGNS $CGNS_VER none "$INSTALL_PREFIX/opt/cgns-$CGNS_VER_S/arch/$ARCH_PATH"
+install_mpi_cmake_package "$SOURCES_DIR" CGNS $CGNS_VER none "$INSTALL_PREFIX/opt/cgns-$CGNS_VER_S/arch/$ARCH_PATH" \
+    -DHDF5_ROOT="$HDF5_INSTALL_PATH"
 
 # Install MED
 install_mpi_cmake_package "$SOURCES_DIR" med $MED_VER none "$INSTALL_PREFIX/opt/med-$MED_VER_S/arch/$ARCH_PATH" \
-    -DHDF5_ROOT_DIR="$HDF5_INSTALL_PATH"
+    -DHDF5_ROOT="$HDF5_INSTALL_PATH" -DHDF5_ROOT_DIR="$HDF5_INSTALL_PATH"
 
 
 # Prepare HYPRE source
