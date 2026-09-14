@@ -230,6 +230,19 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
         -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH_NUM"
         -DCUDA_PATH="$CUDA_PATH"
     )
+
+    # HYPRE 2.33.0's Thrust detection only looks directly under the CUDA
+    # Toolkit's include dir (or an adjacent "cuda-thrust" dir), but CUDA 12+
+    # ships Thrust/CUB nested under a "cccl" subdirectory instead -- so on
+    # newer toolkits (e.g. CUDA 13.x bundled with recent NVHPC releases)
+    # that search comes up empty and HYPRE's configure fails outright.
+    # Locate it ourselves and pre-set the cache variable so HYPRE's own
+    # (broken, for this toolkit) find_path is skipped.
+    NVHPC_HOME_FOR_THRUST="$(dirname "$CUDA_PATH")"
+    THRUST_VERSION_H="$(find "$NVHPC_HOME_FOR_THRUST/cuda" -path '*/cccl/thrust/version.h' 2>/dev/null | head -1)"
+    if [[ -n "$THRUST_VERSION_H" ]]; then
+        HYPRE_CUDA_ARGS+=(-DTHRUST_INCLUDE_DIR="$(dirname "$(dirname "$THRUST_VERSION_H")")")
+    fi
 fi
 
 install_mpi_cmake_package "$SOURCES_DIR" hypre $HYPRE_VER prepare_hypre_source "$INSTALL_PREFIX/opt/hypre-$HYPRE_VER_S/arch/$ARCH_PATH" \
