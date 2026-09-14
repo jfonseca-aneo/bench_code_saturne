@@ -2,11 +2,13 @@
 
 set -e
 
-# GPU (H100) strong-scaling variant of generate_cases.sh.
-# Requires a code_saturne built with the CUDA-enabled stack
-# (CFG_code_saturne_8.3.0-h100.sh) to be on PATH, e.g.:
-#   module load nvhpc-hpcx
-#   module load $CS_INSTALL_PREFIX/saturne/h100/.../code_saturne-<...>
+# GPU strong-scaling variant of generate_cases.sh.
+# Requires a code_saturne built with a CUDA-enabled stack (e.g.
+# CFG_code_saturne_8.3.0-h100.sh or CFG_code_saturne_8.3.0-nvhpc-a100.sh) to
+# be on PATH, and the matching NVHPC/MPI environment loaded, e.g.:
+#   module load nvhpc-hpcx                       # site module, OR
+#   source /etc/profile.d/nvhpc.sh                # standalone NVHPC install
+#   module load $CS_INSTALL_PREFIX/saturne/<arch>/.../code_saturne-<...>
 
 # Test case from open saturne cases
 CASE_NAME=F128_04_GPU
@@ -21,11 +23,11 @@ GPUS_PER_NODE=8
 TASKS_PER_NODE=$GPUS_PER_NODE
 CPUS_PER_TASK=12          # host cores reserved per rank/GPU (adjust to node topology)
 ROOT_WORK_DIR=$(pwd)
-PARTITION=h100
+PARTITION=a100   # your Slurm partition name; irrelevant if not using Slurm
 
-# Load your compiler and MPI environment here if not done before
-# e.g.
-# module load nvhpc-hpcx
+# Load your compiler and MPI environment here if not done before, e.g.
+# module load nvhpc-hpcx              # site module, OR
+# source /etc/profile.d/nvhpc.sh      # standalone NVHPC install
 
 # Create the case folder structure with all scripts needed
 echo "NTUBES = $NTUBES"
@@ -82,9 +84,9 @@ cd \$SLURM_SUBMIT_DIR
 
 export OMP_NUM_THREADS=1
 
-# Load your compiler/MPI environment here
-# e.g.
-# module load nvhpc-hpcx
+# Load your compiler/MPI environment here, e.g.
+# module load nvhpc-hpcx              # site module, OR
+# source /etc/profile.d/nvhpc.sh      # standalone NVHPC install
 
 # Run solver.
 # One rank per GPU, bound via gpu_bind.sh -> CUDA_VISIBLE_DEVICES.
