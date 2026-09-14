@@ -436,10 +436,24 @@ prepare_cs_source() {
 # Install Code_Saturne
 CS_CUDA_ARGS=()
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
+    # cs_cuda.m4's --with-cublas/--with-cusparse=PATH assumes a flat
+    # PATH/include + PATH/lib64 layout, but NVHPC splits nvcc (under
+    # $CUDA_PATH/bin) from the actual cuBLAS/cuSPARSE headers+libs, which
+    # live under a separate math_libs/<ver>/targets/<arch>/{include,lib}
+    # tree (note: "lib", not "lib64"). Locate it and use the more specific
+    # --with-*-include/--with-*-lib flags instead of --with-cublas=PATH.
+    NVHPC_HOME_FOR_MATHLIBS="$(dirname "$CUDA_PATH")"
+    CUBLAS_HEADER="$(find "$NVHPC_HOME_FOR_MATHLIBS/math_libs" -name 'cublas_v2.h' 2>/dev/null | sort -V | tail -1)"
+    [[ -n "$CUBLAS_HEADER" ]] || die "Error: could not locate cublas_v2.h under $NVHPC_HOME_FOR_MATHLIBS/math_libs"
+    CUBLAS_INCLUDE_DIR="$(dirname "$CUBLAS_HEADER")"
+    CUBLAS_LIB_DIR="$(dirname "$CUBLAS_INCLUDE_DIR")/lib"
+
     CS_CUDA_ARGS=(
         --enable-cuda
-        --with-cublas="$CUDA_PATH"
-        --with-cusparse="$CUDA_PATH"
+        --with-cublas-include="$CUBLAS_INCLUDE_DIR"
+        --with-cublas-lib="$CUBLAS_LIB_DIR"
+        --with-cusparse-include="$CUBLAS_INCLUDE_DIR"
+        --with-cusparse-lib="$CUBLAS_LIB_DIR"
         "CUDA_ARCH_NUM=$CUDA_ARCH_NUM"
     )
 fi
