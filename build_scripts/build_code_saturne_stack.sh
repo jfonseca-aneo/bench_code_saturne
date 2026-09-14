@@ -42,20 +42,36 @@ Requires AOCL_ROOT to be defined when COMPILER=AMD - AMD Optimizing CPU Librarie
 
 Optional GPU (CUDA) build - set in STACK_CONFIG:
     CUDA_ENABLED     - "yes" to enable CUDA support (default: no)
-    CUDA_ARCH_NUM    - target compute capability, e.g. 90 for H100 (required if CUDA_ENABLED=yes)
+    CUDA_ARCH_NUM    - target compute capability, e.g. 90 for H100, 80 for A100
+                        (required if CUDA_ENABLED=yes)
     CUDA_PATH        - CUDA toolkit root (default: derived from 'nvcc' on PATH,
-                        e.g. after 'module load nvhpc-hpcx')
+                        e.g. after 'module load nvhpc-hpcx', or after sourcing
+                        /etc/profile.d/nvhpc.sh as installed by install_sem3d_nvhpc.sh)
     TPL_BLAS_LIBRARIES, TPL_LAPACK_LIBRARIES
                      - BLAS/LAPACK lib dirs used to build HYPRE (default: \$AOCL_ROOT/lib)
     CS_BLAS_ARGS     - bash array of --with-blas* configure args for Code_Saturne
                         (default: AOCL blis/flame; set to an empty array to let
                         configure auto-detect, as recommended for NVHPC builds)
+    HDF5_PREBUILT_ROOT
+                     - path to an already-built HDF5 install (e.g. the one
+                        produced by install_sem3d_nvhpc.sh) to link CGNS/MED/
+                        Code_Saturne against, skipping this script's own HDF5
+                        build entirely. When set, HDF5_VER is not required.
+
+OPENMPI_PREFIX may be "auto" instead of a path when COMPILER=NVHPC in
+STACK_CONFIG: the MPI bundled with the NVIDIA HPC SDK is then located
+automatically (requires nvc/nvfortran and that MPI on PATH already, e.g. by
+sourcing /etc/profile.d/nvhpc.sh as installed by install_sem3d_nvhpc.sh).
 EOF
 }
 
 # Parse and validate input arguments
 STACK_CONFIG="$1"
-OPENMPI_PREFIX="$(realpath $2)"
+if [[ "$2" == "auto" ]]; then
+    OPENMPI_PREFIX="auto"
+else
+    OPENMPI_PREFIX="$(realpath $2)"
+fi
 SOURCES_DIR="$(realpath $3)"
 INSTALL_PREFIX=$4
 TEMP_DIR="$5"
@@ -68,7 +84,9 @@ is_nonempty OPENMPI_PREFIX || (show_help; die "OPENMPI_PREFIX undefined" )
 # Load stack config
 source "$STACK_CONFIG"
 
-is_nonempty HDF5_VER || die "Error: HDF5_VER undefined in STACK_CONFIG"
+if [[ -z "${HDF5_PREBUILT_ROOT:-}" ]]; then
+    is_nonempty HDF5_VER || die "Error: HDF5_VER undefined in STACK_CONFIG"
+fi
 is_nonempty CGNS_VER || die "Error: CGNS_VER undefined in STACK_CONFIG"
 is_nonempty HYPRE_VER || die "Error: HYPRE_VER undefined in STACK_CONFIG"
 is_nonempty MED_VER || die "Error: MED_VER undefined in STACK_CONFIG"
@@ -77,7 +95,9 @@ is_nonempty ARCH_PATH || die "Error: ARCH_PATH undefined in STACK_CONFIG"
 is_nonempty COMPILER || die "Error: COMPILER undefined in STACK_CONFIG"
 is_nonempty PERFORMANCE_LIBS || die "Error: PERFORMANCE_LIBS undefined in STACK_CONFIG"
 
-readonly HDF5_VER_S=${HDF5_VER%.*}
+if [[ -z "${HDF5_PREBUILT_ROOT:-}" ]]; then
+    readonly HDF5_VER_S=${HDF5_VER%.*}
+fi
 readonly CGNS_VER_S=${CGNS_VER%.*}
 readonly CODE_SATURNE_VER_S=$(extract_short_version $CODE_SATURNE_VER)
 readonly HYPRE_VER_S=${HYPRE_VER%.*}
@@ -128,8 +148,10 @@ fi
 
 # Fetch upstream release tarballs on demand into SOURCES_DIR instead of
 # shipping them alongside the scripts. Re-run-safe: skipped if already cached.
-ensure_source_tarball "$SOURCES_DIR" "hdf5-${HDF5_VER}.tar.gz" \
-    "https://github.com/HDFGroup/hdf5/archive/refs/tags/hdf5-${HDF5_VER//./_}.tar.gz"
+if [[ -z "${HDF5_PREBUILT_ROOT:-}" ]]; then
+    ensure_source_tarball "$SOURCES_DIR" "hdf5-${HDF5_VER}.tar.gz" \
+        "https://github.com/HDFGroup/hdf5/archive/refs/tags/hdf5-${HDF5_VER//./_}.tar.gz"
+fi
 ensure_source_tarball "$SOURCES_DIR" "CGNS-${CGNS_VER}.tar.gz" \
     "https://github.com/CGNS/CGNS/archive/refs/tags/v${CGNS_VER}.tar.gz"
 ensure_source_tarball "$SOURCES_DIR" "med-${MED_VER}.tar.bz2" \
@@ -137,16 +159,23 @@ ensure_source_tarball "$SOURCES_DIR" "med-${MED_VER}.tar.bz2" \
 ensure_source_tarball "$SOURCES_DIR" "hypre-${HYPRE_VER}.tar.gz" \
     "https://github.com/hypre-space/hypre/archive/refs/tags/v${HYPRE_VER}.tar.gz"
 
-# Install HDF5
-install_mpi_cmake_package "$SOURCES_DIR" hdf5 $HDF5_VER none "$INSTALL_PREFIX/opt/hdf5-$HDF5_VER_S/arch/$ARCH_PATH" \
-    -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DHDF5_BUILD_FORTRAN=ON -DHDF5_ENABLE_PARALLEL=ON
+# Install HDF5, or reuse an already-built one (e.g. from install_sem3d_nvhpc.sh)
+if [[ -n "${HDF5_PREBUILT_ROOT:-}" ]]; then
+    [[ -d "$HDF5_PREBUILT_ROOT" ]] || die "Error: HDF5_PREBUILT_ROOT=$HDF5_PREBUILT_ROOT does not exist"
+    HDF5_INSTALL_PATH="$(realpath "$HDF5_PREBUILT_ROOT")"
+    log "Reusing prebuilt HDF5 at $HDF5_INSTALL_PATH (skipping HDF5 build)"
+else
+    HDF5_INSTALL_PATH="$INSTALL_PREFIX/opt/hdf5-$HDF5_VER_S/arch/$ARCH_PATH"
+    install_mpi_cmake_package "$SOURCES_DIR" hdf5 $HDF5_VER none "$HDF5_INSTALL_PATH" \
+        -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DHDF5_BUILD_FORTRAN=ON -DHDF5_ENABLE_PARALLEL=ON
+fi
 
 # Install CGNS
 install_mpi_cmake_package "$SOURCES_DIR" CGNS $CGNS_VER none "$INSTALL_PREFIX/opt/cgns-$CGNS_VER_S/arch/$ARCH_PATH"
 
 # Install MED
 install_mpi_cmake_package "$SOURCES_DIR" med $MED_VER none "$INSTALL_PREFIX/opt/med-$MED_VER_S/arch/$ARCH_PATH" \
-    -DHDF5_ROOT_DIR="$INSTALL_PREFIX/opt/hdf5-${HDF5_VER_S}/arch/$ARCH_PATH"
+    -DHDF5_ROOT_DIR="$HDF5_INSTALL_PATH"
 
 
 # Prepare HYPRE source
@@ -202,7 +231,7 @@ install_auto_package "$SOURCES_DIR" code_saturne $CODE_SATURNE_VER prepare_cs_so
     --disable-gui \
     --with-mpi="$OPENMPI_PREFIX" \
     "${CS_BLAS_ARGS[@]}" \
-    --with-hdf5="$INSTALL_PREFIX/opt/hdf5-$HDF5_VER_S/arch/$ARCH_PATH" \
+    --with-hdf5="$HDF5_INSTALL_PATH" \
     --without-metis --without-scotch \
     --with-med="$INSTALL_PREFIX/opt/med-$MED_VER_S/arch/$ARCH_PATH" \
     --with-cgns="$INSTALL_PREFIX/opt/cgns-$CGNS_VER_S/arch/$ARCH_PATH" \

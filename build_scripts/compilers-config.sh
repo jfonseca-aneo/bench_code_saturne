@@ -194,19 +194,48 @@ function compiler_NVHPC {
 }
 
 #------------------------------------------------------------------------------
+# Function: detect_nvhpc_mpi_prefix
+# Description:
+#   Locates the MPI installation bundled with the NVIDIA HPC SDK (comm_libs),
+#   the same way install_sem3d_nvhpc.sh does: find nvc on PATH to get
+#   NVHPC_HOME, then search comm_libs for mpicc. Requires nvc/nvfortran and
+#   the bundled MPI to already be on PATH/LD_LIBRARY_PATH (e.g. by sourcing
+#   /etc/profile.d/nvhpc.sh, as installed by install_sem3d_nvhpc.sh).
+# Returns:
+#   Prints the MPI prefix (dir containing bin/lib/include) to stdout.
+#------------------------------------------------------------------------------
+detect_nvhpc_mpi_prefix() {
+    local nvc_bin nvhpc_home mpicc_path
+    nvc_bin="$(command -v nvc)" || die "Error: mpipath=auto requires 'nvc' on PATH (source /etc/profile.d/nvhpc.sh, or load the nvhpc module, first)"
+    # nvc lives at <NVHPC_HOME>/compilers/bin/nvc
+    nvhpc_home="$(cd "$(dirname "$nvc_bin")/../.." && pwd)"
+    mpicc_path="$(find "$nvhpc_home/comm_libs" -type f -name mpicc 2>/dev/null | sort -V | tail -1)"
+    is_nonempty mpicc_path || die "Error: could not locate mpicc under $nvhpc_home/comm_libs"
+    dirname "$(dirname "$mpicc_path")"
+}
+
+#------------------------------------------------------------------------------
 # Function: set_compiler
 # Description:
 #   Main entry point to configure compiler and performance libraries.
 # Arguments:
 #   $1 - Compiler prefix (e.g., GCC, AMD, INTEL)
 #   $2 - Performance library flavor (AOCL, MKL, System)
-#   $3 - MPI installation path (or empty if not used)
+#   $3 - MPI installation path, or "auto" to auto-detect the MPI bundled
+#        with the NVIDIA HPC SDK (only valid when $1 is NVHPC), or empty
+#        if not used
 #   $@ - Additional environment overrides in VAR=VALUE format
 #------------------------------------------------------------------------------
 set_compiler() {
     local compiler="$1"
     local lib_flavor="$2"
     local mpipath="$3"
+
+    if [[ "$mpipath" == "auto" ]]; then
+        [[ "$compiler" == "NVHPC" ]] || die "Error: mpipath=auto is only supported with COMPILER=NVHPC"
+        mpipath="$(detect_nvhpc_mpi_prefix)"
+        log "Auto-detected NVHPC MPI prefix: $mpipath"
+    fi
 
     # Setup MPI environment
     local mpi_loaded="no"
