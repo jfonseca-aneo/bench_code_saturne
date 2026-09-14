@@ -1,7 +1,0 @@
-This directory is a download cache, not a place for vendored tarballs.
-
-build_code_saturne_stack.sh fetches HDF5, CGNS, MED and HYPRE from their
-official upstream locations into this directory on demand (see
-ensure_source_tarball in build_common.sh); Code_Saturne itself is cloned
-directly from its official GitHub mirror (see CODE_SATURNE_VER in
-CFG_code_saturne_8.3.0-h100.sh). Nothing here needs to be committed.
