@@ -3,7 +3,10 @@ export HDF5_VER="1.12.3"
 export CGNS_VER="4.5.0"
 export MED_VER="5.0.0"
 export HYPRE_VER="2.33.0"
-export CODE_SATURNE_VER="8.3.0"
+
+# Fetched directly from the official code_saturne GitHub mirror instead of a
+# vendored tarball under sources/ (git:<repo url>#<tag/branch/commit>).
+export CODE_SATURNE_VER="git:https://github.com/code-saturne/code_saturne.git#v8.3.0"
 
 export ARCH_PATH="ompi_hpcx_h100"
 export COMPILER=NVHPC
