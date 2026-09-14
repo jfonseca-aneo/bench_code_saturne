@@ -196,17 +196,22 @@ if [[ "$OPENMPI_PREFIX" == "auto" ]]; then
 fi
 
 # Code_Saturne's --with-mpi=PATH assumes a flat PATH/include layout, but
-# NVHPC's HPC-X bundle nests the actual OpenMPI component one level deeper
-# (e.g. .../hpcx/ompi/include/mpi.h, not .../hpcx/include/mpi.h). Fine for
-# normal compiles (they go through the mpicc/mpicxx wrapper, which already
-# knows the real paths internally), but the separate nvcc-based CUDA build
-# rule needs an explicit, correct -I and doesn't get one from the bare
-# prefix. Locate the real mpi.h and pass its parent as --with-mpi instead.
+# $OPENMPI_PREFIX (.../comm_libs/hpcx) contains ONLY a bin/ directory here --
+# no include/lib at all. mpicc is a wrapper script that hardcodes the real,
+# differently-versioned install path internally (e.g.
+# .../comm_libs/13.0/hpcx/hpcx-2.25.1/ompi/{include,lib}), so searching the
+# filesystem under $OPENMPI_PREFIX for mpi.h finds nothing. Fine for normal
+# compiles (they go through the wrapper, which knows its own real paths),
+# but the separate nvcc-based CUDA build rule needs an explicit, correct -I
+# and doesn't get one from the bare prefix. Ask the wrapper itself (the
+# authoritative source) via -show, and use its first -I's parent as
+# --with-mpi instead.
 CS_MPI_PATH="$OPENMPI_PREFIX"
 if [[ "$COMPILER" == "NVHPC" ]]; then
-    MPI_H="$(find "$OPENMPI_PREFIX" -name 'mpi.h' 2>/dev/null | sort -V | tail -1)"
-    if [[ -n "$MPI_H" ]]; then
-        CS_MPI_PATH="$(dirname "$(dirname "$MPI_H")")"
+    MPICC_SHOW="$("$OPENMPI_PREFIX/bin/mpicc" -show 2>/dev/null)"
+    MPI_INCLUDE_DIR="$(grep -o -- '-I[^ ]*' <<<"$MPICC_SHOW" | head -1 | sed 's/^-I//')"
+    if [[ -n "$MPI_INCLUDE_DIR" && -f "$MPI_INCLUDE_DIR/mpi.h" ]]; then
+        CS_MPI_PATH="$(dirname "$MPI_INCLUDE_DIR")"
     fi
 fi
 
