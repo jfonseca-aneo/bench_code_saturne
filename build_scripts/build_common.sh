@@ -353,11 +353,19 @@ install_mpi_cmake_package() {
     rm -rf build && mkdir -p build
     pushd build || die "Failed to enter build directory"
 
+    # CMAKE_FIND_USE_*_PACKAGE_REGISTRY=OFF: without this, find_package(...
+    # CONFIG) calls (e.g. MED's HDF5 detection) can silently pick up an
+    # unrelated HDF5/CGNS/etc. build from ~/.cmake/packages/, left there by
+    # export(PACKAGE ...) in some other project's build tree (e.g. one built
+    # by install_sem3d_nvhpc.sh) -- entirely bypassing the *_ROOT_DIR/prefix
+    # hints passed below.
     cmake .. --debug-trycompile \
         -DCMAKE_INSTALL_PREFIX="$prefix" \
         -DCMAKE_C_COMPILER="$CC" \
         -DCMAKE_CXX_COMPILER="$CXX" \
         -DCMAKE_FORTRAN_COMPILER="$FC" \
+        -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+        -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
         "$@" || die "CMake configuration failed"
         # "${expanded_args[@]}" || die "CMake configuration failed"
 
