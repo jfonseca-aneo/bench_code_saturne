@@ -243,6 +243,12 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
     if [[ -n "$THRUST_VERSION_H" ]]; then
         HYPRE_CUDA_ARGS+=(-DTHRUST_INCLUDE_DIR="$(dirname "$(dirname "$THRUST_VERSION_H")")")
     fi
+
+    # HYPRE only bumps CMAKE_CXX_STANDARD (and, derived from it,
+    # CMAKE_CUDA_STANDARD) up to a *minimum* of 14 for CUDA builds
+    # (HYPRE_SetupGPUToolkit.cmake), but the CCCL/Thrust bundled with CUDA
+    # 12+ hard-requires C++17. Force it explicitly.
+    HYPRE_CUDA_ARGS+=(-DCMAKE_CXX_STANDARD=17)
 fi
 
 install_mpi_cmake_package "$SOURCES_DIR" hypre $HYPRE_VER prepare_hypre_source "$INSTALL_PREFIX/opt/hypre-$HYPRE_VER_S/arch/$ARCH_PATH" \
