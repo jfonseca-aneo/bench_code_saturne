@@ -205,6 +205,56 @@ install_mpi_cmake_package "$SOURCES_DIR" med $MED_VER none "$INSTALL_PREFIX/opt/
     -DHDF5_ROOT="$HDF5_INSTALL_PATH" -DHDF5_ROOT_DIR="$HDF5_INSTALL_PATH"
 
 
+# HYPRE 2.33.0 calls cudaMemPrefetchAsync() with the pre-CUDA-13 signature
+# (a plain int device id), which CUDA 13's headers no longer accept (they
+# require a cudaMemLocation struct). Upstream fixed this on their default
+# branch (utilities/device_utils.h, "#if CUDART_VERSION >= 13000") but no
+# tagged release with the fix exists yet, so backport just that hunk into
+# utilities/memory.c here.
+patch_hypre_cuda13_prefetch() {
+    python3 - <<'PYEOF'
+import sys
+
+path = "utilities/memory.c"
+with open(path) as f:
+    content = f.read()
+
+old_device = """      HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, hypre_HandleDevice(hypre_handle()),
+                                            hypre_HandleComputeStream(hypre_handle())) );"""
+new_device = """#if CUDART_VERSION >= 13000
+      { cudaMemLocation hypre__loc = {cudaMemLocationTypeDevice, hypre_HandleDevice(hypre_handle())};
+        HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, hypre__loc, 0,
+                                            hypre_HandleComputeStream(hypre_handle())) ); }
+#else
+      HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, hypre_HandleDevice(hypre_handle()),
+                                            hypre_HandleComputeStream(hypre_handle())) );
+#endif"""
+
+old_host = """      HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId,
+                                            hypre_HandleComputeStream(hypre_handle())) );"""
+new_host = """#if CUDART_VERSION >= 13000
+      { cudaMemLocation hypre__loc = {cudaMemLocationTypeHost, cudaCpuDeviceId};
+        HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, hypre__loc, 0,
+                                            hypre_HandleComputeStream(hypre_handle())) ); }
+#else
+      HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId,
+                                            hypre_HandleComputeStream(hypre_handle())) );
+#endif"""
+
+for old, new, label in ((old_device, new_device, "device"), (old_host, new_host, "host")):
+    n = content.count(old)
+    if n != 1:
+        sys.exit(f"hypre CUDA-13 prefetch patch: {label} pattern found {n} times, expected 1 -- "
+                  "HYPRE source may have changed, adjust the patch")
+    content = content.replace(old, new, 1)
+
+with open(path, "w") as f:
+    f.write(content)
+
+print("Patched utilities/memory.c for CUDA >= 13.0 cudaMemPrefetchAsync API")
+PYEOF
+}
+
 # Prepare HYPRE source
 prepare_hypre_source() {
     local source_dir="$1"
@@ -214,6 +264,9 @@ prepare_hypre_source() {
     tarball=$(ls "$source_dir/${package_name}-${version}"*)
     extract_tarball "$tarball"
     pushd "${package_name}-${version}/src" || die "Error: Directory ${package_name}-${version}/src not found"
+    if [[ "$CUDA_ENABLED" == "yes" ]]; then
+        patch_hypre_cuda13_prefetch
+    fi
 }
 
 # Install HYPRE
