@@ -184,6 +184,16 @@ fi
 
 # Switch to AMD compiler for HYPRE and Code_Saturne, optimize for Epyc 4 processors
 set_compiler "$COMPILER" "$PERFORMANCE_LIBS" "$OPENMPI_PREFIX" #"CFLAGS=-march=znver4"
+# set_compiler resolves OPENMPI_PREFIX="auto" to a real path internally, but
+# only for its own use -- without this, every later use of $OPENMPI_PREFIX
+# here (e.g. Code_Saturne's --with-mpi=$OPENMPI_PREFIX below) would still
+# see the literal string "auto", which Code_Saturne's own configure doesn't
+# understand (its MPI include path for the separate nvcc CUDA build rule
+# specifically depends on getting a real --with-mpi path, unlike plain
+# compiles that pick MPI up automatically via the mpicc/mpicxx wrappers).
+if [[ "$OPENMPI_PREFIX" == "auto" ]]; then
+    OPENMPI_PREFIX="$SET_COMPILER_RESOLVED_MPI_PATH"
+fi
 
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
     export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include -I${CUDA_TOOLKIT_INCLUDE_DIR}"

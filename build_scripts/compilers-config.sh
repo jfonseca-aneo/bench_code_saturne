@@ -236,6 +236,10 @@ set_compiler() {
         mpipath="$(detect_nvhpc_mpi_prefix)"
         log "Auto-detected NVHPC MPI prefix: $mpipath"
     fi
+    # Expose the resolved path to the caller: passing mpipath="auto" through
+    # (e.g. into a later --with-mpi=$OPENMPI_PREFIX for another package's
+    # configure) only works with the actual path, not the literal "auto".
+    SET_COMPILER_RESOLVED_MPI_PATH="$mpipath"
 
     # NVHPC's bundled HPC-X MPI (UCX/HCOLL/SHARP-based) doesn't have the flat
     # lib/include layout a self-built OpenMPI stack does, so the manual
