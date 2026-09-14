@@ -499,11 +499,20 @@ patch_cs_cuda13_prefetch() {
     python3 - <<'PYEOF'
 import sys
 
-path = "src/base/cs_mem_cuda_priv.cu"
-with open(path) as f:
-    content = f.read()
+def patch_file(path, replacements):
+    with open(path) as f:
+        content = f.read()
+    for old, new, label in replacements:
+        n = content.count(old)
+        if n != 1:
+            sys.exit(f"code_saturne CUDA-13 prefetch patch: '{label}' pattern found {n} times "
+                      f"in {path}, expected 1 -- source may have changed, adjust the patch")
+        content = content.replace(old, new, 1)
+    with open(path, "w") as f:
+        f.write(content)
+    print(f"Patched {path} for CUDA >= 13.0 cudaMemPrefetchAsync/cudaMemAdvise API")
 
-replacements = [
+patch_file("src/base/cs_mem_cuda_priv.cu", [
     ("""  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, _cs_glob_cuda_device_id, \\
                                      _cs_glob_stream_pf));""",
      """#if CUDART_VERSION >= 13000
@@ -561,19 +570,17 @@ replacements = [
                               _cs_glob_cuda_device_id))
 #endif""",
      "unset advise read-mostly"),
-]
+])
 
-for old, new, label in replacements:
-    n = content.count(old)
-    if n != 1:
-        sys.exit(f"code_saturne CUDA-13 prefetch patch: '{label}' pattern found {n} times "
-                  f"in {path}, expected 1 -- source may have changed, adjust the patch")
-    content = content.replace(old, new, 1)
-
-with open(path, "w") as f:
-    f.write(content)
-
-print(f"Patched {path} for CUDA >= 13.0 cudaMemPrefetchAsync/cudaMemAdvise API")
+patch_file("src/alge/cs_sles_it_cuda.cu", [
+    ("  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, device_id, stream));",
+     """#if CUDART_VERSION >= 13000
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, {cudaMemLocationTypeDevice, device_id}, 0, stream));
+#else
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, device_id, stream));
+#endif""",
+     "h2d prefetch"),
+])
 PYEOF
 }
 
