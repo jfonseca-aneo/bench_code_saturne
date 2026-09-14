@@ -175,7 +175,12 @@ set_compiler "$COMPILER" "$PERFORMANCE_LIBS" "$OPENMPI_PREFIX" #"CFLAGS=-march=z
 
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
     export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include -I${CUDA_TOOLKIT_INCLUDE_DIR}"
-    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64 -L${CUDA_TOOLKIT_LIB_DIR}"
+    # -lcudart: cs_hypre.m4's link test only adds -lHYPRE (+ MPI libs), not
+    # any CUDA runtime lib, even though libHYPRE.a (built with
+    # HYPRE_ENABLE_CUDA) contains device code needing cudaGetDevice,
+    # __cudaRegisterVar and friends from libcudart -- so without this on
+    # the ambient LDFLAGS, that link test fails with undefined references.
+    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64 -L${CUDA_TOOLKIT_LIB_DIR} -lcudart"
 fi
 
 # Fetch upstream release tarballs on demand into SOURCES_DIR instead of
