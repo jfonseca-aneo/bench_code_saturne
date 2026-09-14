@@ -155,7 +155,11 @@ is_nonempty TPL_LAPACK_LIBRARIES || die "Error: TPL_LAPACK_LIBRARIES undefined (
 
 # --with-blas* args for Code_Saturne's configure. Defaults to AOCL blis/flame
 # for backward compatibility; override (e.g. to an empty array) in STACK_CONFIG.
-if [[ -z "${CS_BLAS_ARGS+x}" ]]; then
+# Note: "${CS_BLAS_ARGS+x}" can't tell a declared-but-empty array from a
+# truly unset variable (a real bash quirk, not something the config file can
+# work around), so a STACK_CONFIG that sets CS_BLAS_ARGS=() to mean "let
+# configure auto-detect" would otherwise be silently overridden here.
+if ! declare -p CS_BLAS_ARGS &>/dev/null; then
     CS_BLAS_ARGS=(--with-blas --with-blas-type=BLAS --with-blas-libs="-lblis -lflame")
 fi
 
