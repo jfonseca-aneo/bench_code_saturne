@@ -486,6 +486,97 @@ install_mpi_cmake_package "$SOURCES_DIR" hypre $HYPRE_VER prepare_hypre_source "
     -DTPL_LAPACK_LIBRARIES="$TPL_LAPACK_LIBRARIES" -DTPL_BLAS_LIBRARIES="$TPL_BLAS_LIBRARIES" \
     "${HYPRE_CUDA_ARGS[@]}"
 
+# Code_Saturne 8.3.0-8.3.2 (the latest tagged release as of writing) predate
+# CUDA 13 the same way HYPRE 2.33.0 did: src/base/cs_mem_cuda_priv.cu calls
+# cudaMemPrefetchAsync()/cudaMemAdvise() with the pre-CUDA-13 signature (a
+# plain int device id), which CUDA 13's headers no longer accept (they
+# require a cudaMemLocation struct). Upstream fixed this on their default
+# branch but it hasn't reached a tagged release yet -- backport just that
+# hunk, following the exact same pattern already proven for HYPRE (a
+# positional {type, id} aggregate-init, not master's ".type=/.id=" designated
+# initializers, to avoid depending on C++20 designated-initializer support).
+patch_cs_cuda13_prefetch() {
+    python3 - <<'PYEOF'
+import sys
+
+path = "src/base/cs_mem_cuda_priv.cu"
+with open(path) as f:
+    content = f.read()
+
+replacements = [
+    ("""  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, _cs_glob_cuda_device_id, \\
+                                     _cs_glob_stream_pf));""",
+     """#if CUDART_VERSION >= 13000
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size,
+                                     {cudaMemLocationTypeDevice, _cs_glob_cuda_device_id}, 0,
+                                     _cs_glob_stream_pf));
+#else
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, _cs_glob_cuda_device_id, \\
+                                     _cs_glob_stream_pf));
+#endif""",
+     "device prefetch"),
+
+    ("""  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, cudaCpuDeviceId, \\
+                                     _cs_glob_stream_pf));""",
+     """#if CUDART_VERSION >= 13000
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size,
+                                     {cudaMemLocationTypeHost, cudaCpuDeviceId}, 0,
+                                     _cs_glob_stream_pf));
+#else
+  CS_CUDA_CHECK(cudaMemPrefetchAsync(dst, size, cudaCpuDeviceId, \\
+                                     _cs_glob_stream_pf));
+#endif""",
+     "host prefetch"),
+
+    ("""  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseSetReadMostly,
+                              _cs_glob_cuda_device_id))""",
+     """#if CUDART_VERSION >= 13000
+  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseSetReadMostly,
+                              {cudaMemLocationTypeDevice, _cs_glob_cuda_device_id}))
+#else
+  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseSetReadMostly,
+                              _cs_glob_cuda_device_id))
+#endif""",
+     "set advise read-mostly"),
+
+    ("""  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseUnsetReadMostly,
+                              _cs_glob_cuda_device_id))""",
+     """#if CUDART_VERSION >= 13000
+  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseUnsetReadMostly,
+                              {cudaMemLocationTypeDevice, _cs_glob_cuda_device_id}))
+#else
+  CS_CUDA_CHECK(cudaMemAdvise(ptr,
+                              size,
+                              cudaMemAdviseUnsetReadMostly,
+                              _cs_glob_cuda_device_id))
+#endif""",
+     "unset advise read-mostly"),
+]
+
+for old, new, label in replacements:
+    n = content.count(old)
+    if n != 1:
+        sys.exit(f"code_saturne CUDA-13 prefetch patch: '{label}' pattern found {n} times "
+                  f"in {path}, expected 1 -- source may have changed, adjust the patch")
+    content = content.replace(old, new, 1)
+
+with open(path, "w") as f:
+    f.write(content)
+
+print(f"Patched {path} for CUDA >= 13.0 cudaMemPrefetchAsync/cudaMemAdvise API")
+PYEOF
+}
+
 # Prepare Code_Saturne source
 prepare_cs_source() {
     prepare_package_source $1 none $2 $3
@@ -495,6 +586,10 @@ prepare_cs_source() {
 
     # Patch Fortran files to avoid syntax issues
     find . -type f -name "*.f90" -exec sed -i 's/\s*procedure\s*()\s*::/!procedure() :: /g' {} \;
+
+    if [[ "$CUDA_ENABLED" == "yes" ]]; then
+        patch_cs_cuda13_prefetch
+    fi
 }
 
 # Install Code_Saturne
