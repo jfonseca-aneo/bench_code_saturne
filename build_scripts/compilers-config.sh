@@ -237,6 +237,22 @@ set_compiler() {
         log "Auto-detected NVHPC MPI prefix: $mpipath"
     fi
 
+    # NVHPC's bundled HPC-X MPI (UCX/HCOLL/SHARP-based) doesn't have the flat
+    # lib/include layout a self-built OpenMPI stack does, so the manual
+    # -I/-L/-lmpi flags built below for that case would guess the wrong
+    # paths. Use the mpicc/mpifort wrappers themselves as CC/FC instead --
+    # they already embed the right flags -- the same approach
+    # install_sem3d_nvhpc.sh uses.
+    local nvhpc_mpi_cc_override=()
+    if [[ "$compiler" == "NVHPC" && -n "$mpipath" ]]; then
+        [[ -x "$mpipath/bin/mpicc" ]] || die "Error: no mpicc under $mpipath/bin"
+        [[ -x "$mpipath/bin/mpifort" ]] || die "Error: no mpifort under $mpipath/bin"
+        nvhpc_mpi_cc_override=("CC=$mpipath/bin/mpicc" "FC=$mpipath/bin/mpifort")
+        if [[ -x "$mpipath/bin/mpicxx" ]]; then
+            nvhpc_mpi_cc_override+=("CXX=$mpipath/bin/mpicxx")
+        fi
+    fi
+
     # Setup MPI environment
     local mpi_loaded="no"
     if [[ -n "$mpipath" ]]; then
@@ -250,10 +266,12 @@ set_compiler() {
             export MPI_HOME=$mpipath
         fi
 
-        CFLAGS="-I${MPI_HOME}/include"
-        CXXFLAGS="-I${MPI_HOME}/include"
-        FFLAGS="-I${MPI_HOME}/include"
-        LDFLAGS="-L${MPI_HOME}/lib -Wl,-rpath,${MPI_HOME}/lib -lmpi -lmpi_mpifh"
+        if [[ "$compiler" != "NVHPC" ]]; then
+            CFLAGS="-I${MPI_HOME}/include"
+            CXXFLAGS="-I${MPI_HOME}/include"
+            FFLAGS="-I${MPI_HOME}/include"
+            LDFLAGS="-L${MPI_HOME}/lib -Wl,-rpath,${MPI_HOME}/lib -lmpi -lmpi_mpifh"
+        fi
         PATH="${MPI_HOME}/bin:$PATH"
         export MPI_ROOT_DIR="$MPI_HOME"
     fi
@@ -287,5 +305,5 @@ set_compiler() {
 
     shift 3
     fn=compiler_$compiler
-    $fn "PATH=$PATH" "LDFLAGS=$LDFLAGS" "CFLAGS=$CFLAGS" "CXXFLAGS=$CXXFLAGS" "FFLAGS=$FFLAGS" "$@"
+    $fn "PATH=$PATH" "LDFLAGS=$LDFLAGS" "CFLAGS=$CFLAGS" "CXXFLAGS=$CXXFLAGS" "FFLAGS=$FFLAGS" "${nvhpc_mpi_cc_override[@]}" "$@"
 }
