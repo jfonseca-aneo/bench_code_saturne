@@ -10,7 +10,7 @@ against that same toolchain). Pick the config file matching your GPU and
 setup:
 
 - `CFG_code_saturne_8.3.0-h100.sh` — H100 (`CUDA_ARCH_NUM=90`), `module load`-based NVHPC/MPI, builds its own HDF5.
-- `CFG_code_saturne_8.3.0-nvhpc-a100.sh` — A100 (`CUDA_ARCH_NUM=80`), standalone NVHPC install, reuses an existing HDF5 via `HDF5_PREBUILT_ROOT` instead of building one.
+- `CFG_code_saturne_8.3.0-nvhpc-a100.sh` — A100 (`CUDA_ARCH_NUM=80`), standalone NVHPC install, builds its own HDF5 1.12.3. It does *not* reuse the HDF5 1.14.6 built by `install_sem3d_nvhpc.sh`: MED 5.0.0's build hard-requires HDF5 1.12.x exactly (see `HDF5_PREBUILT_ROOT` below if a future dependency version ever makes reuse possible again).
 
 1) Set install dir:
 ```bash

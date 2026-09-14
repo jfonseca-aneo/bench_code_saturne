@@ -1,8 +1,9 @@
 # Versions
-# HDF5_VER is informational only: HDF5_PREBUILT_ROOT below makes
-# build_code_saturne_stack.sh reuse an existing HDF5 install instead of
-# building one, so this must just document what that install actually is.
-export HDF5_VER="1.14.6"
+# MED 5.0.0's medMacros.cmake hard-requires HDF5 1.12.x exactly (it checks
+# HDF_VERSION_MINOR_REF EQUAL 12, not really ">= 1.12.1" as its error message
+# claims), so we can't reuse the HDF5 1.14.6 built by install_sem3d_nvhpc.sh
+# for SEM3D. Build our own 1.12.3 against the same NVHPC/MPI toolchain instead.
+export HDF5_VER="1.12.3"
 export CGNS_VER="4.5.0"
 export MED_VER="5.0.0"
 export HYPRE_VER="2.33.0"
@@ -21,10 +22,6 @@ export CUDA_ARCH_NUM=80
 # CUDA_PATH is left unset: derived from 'nvcc' on PATH after sourcing
 # /etc/profile.d/nvhpc.sh (installed by install_sem3d_nvhpc.sh), or after
 # 'module load nvhpc-hpcx' if that's how NVHPC is exposed instead.
-
-# Reuse the HDF5 already built by install_sem3d_nvhpc.sh against the same
-# NVHPC toolchain/MPI, instead of rebuilding a second HDF5 here.
-export HDF5_PREBUILT_ROOT="/opt/hdf5-nvhpc"
 
 # BLAS/LAPACK used to build HYPRE. No AOCL on this box: point at a system
 # LAPACK/BLAS install. install_sem3d_nvhpc.sh does not install lapack/blas
