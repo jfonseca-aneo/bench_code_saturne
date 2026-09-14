@@ -313,7 +313,7 @@ install_auto_package() {
     pushd build || die "Failed to enter build directory"
 
     ../configure --prefix="$prefix" "$@" || die "Configuration failed"
-    make -j "${PARALLEL_PROCESSES:-10}" || die "Build failed"
+    make -j "${PARALLEL_PROCESSES:-$(nproc)}" || die "Build failed"
     make install || die "Installation failed"
 
     popd || die "Failed to return from build directory"
@@ -376,7 +376,7 @@ install_mpi_cmake_package() {
         "$@" || die "CMake configuration failed"
         # "${expanded_args[@]}" || die "CMake configuration failed"
 
-    cmake --build . --parallel "${PARALLEL_PROCESSES:-10}" || die "Build failed"
+    cmake --build . --parallel "${PARALLEL_PROCESSES:-$(nproc)}" || die "Build failed"
     cmake --install . || die "Installation failed"
 
     popd || die "Failed to return from build directory"
