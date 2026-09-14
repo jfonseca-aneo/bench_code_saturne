@@ -205,20 +205,45 @@ install_mpi_cmake_package "$SOURCES_DIR" med $MED_VER none "$INSTALL_PREFIX/opt/
     -DHDF5_ROOT="$HDF5_INSTALL_PATH" -DHDF5_ROOT_DIR="$HDF5_INSTALL_PATH"
 
 
-# HYPRE 2.33.0 calls cudaMemPrefetchAsync() with the pre-CUDA-13 signature
-# (a plain int device id), which CUDA 13's headers no longer accept (they
-# require a cudaMemLocation struct). Upstream fixed this on their default
-# branch (utilities/device_utils.h, "#if CUDART_VERSION >= 13000") but no
-# tagged release with the fix exists yet, so backport just that hunk into
-# utilities/memory.c here.
-patch_hypre_cuda13_prefetch() {
+# HYPRE 2.33.0 predates CUDA 13 / CCCL 3.0 in a couple of spots. Upstream has
+# since fixed both on its default branch, but no tagged release with either
+# fix exists yet, so backport them here:
+#
+#  1. cudaMemPrefetchAsync() called with the pre-CUDA-13 signature (a plain
+#     int device id); CUDA 13's headers require a cudaMemLocation struct
+#     instead (utilities/memory.c).
+#  2. The classic "adaptable function object" library (identity,
+#     unary_function, binary_function, not1, not2), removed wholesale in
+#     CCCL 3.0 (bundled with CUDA 13) the way C++17/20 removed the
+#     equivalent std:: names it mirrored. HYPRE's device code uses these
+#     unconditionally in dozens of places across the codebase. Rather than
+#     react file by file as each one surfaces (fragile, and every call site
+#     has slightly different syntax: direct predicate argument, named
+#     variable, wrapped in not1/HYPRE_THRUST_NOT, base-class inheritance
+#     with template args that can themselves contain nested <...>/commas),
+#     define the whole removed family back, verbatim, directly into
+#     namespace thrust -- so no call site needs touching at all, now or if
+#     more turn up later. Prepended to every file found to reference any of
+#     these names, discovered dynamically rather than hardcoded.
+patch_hypre_cuda13_compat() {
     python3 - <<'PYEOF'
+import os
 import sys
 
-path = "utilities/memory.c"
-with open(path) as f:
-    content = f.read()
+def patch_file(path, replacements):
+    with open(path) as f:
+        content = f.read()
+    for old, new, label in replacements:
+        n = content.count(old)
+        if n != 1:
+            sys.exit(f"hypre CUDA-13 compat patch: '{label}' pattern found {n} times "
+                      f"in {path}, expected 1 -- HYPRE source may have changed, adjust the patch")
+        content = content.replace(old, new, 1)
+    with open(path, "w") as f:
+        f.write(content)
+    print(f"Patched {path} for CUDA >= 13.0 / CCCL 3.0")
 
+# 1. cudaMemPrefetchAsync()
 old_device = """      HYPRE_CUDA_CALL( cudaMemPrefetchAsync(ptr, size, hypre_HandleDevice(hypre_handle()),
                                             hypre_HandleComputeStream(hypre_handle())) );"""
 new_device = """#if CUDART_VERSION >= 13000
@@ -241,17 +266,105 @@ new_host = """#if CUDART_VERSION >= 13000
                                             hypre_HandleComputeStream(hypre_handle())) );
 #endif"""
 
-for old, new, label in ((old_device, new_device, "device"), (old_host, new_host, "host")):
-    n = content.count(old)
-    if n != 1:
-        sys.exit(f"hypre CUDA-13 prefetch patch: {label} pattern found {n} times, expected 1 -- "
-                  "HYPRE source may have changed, adjust the patch")
-    content = content.replace(old, new, 1)
+patch_file("utilities/memory.c", [
+    (old_device, new_device, "device prefetch"),
+    (old_host, new_host, "host prefetch"),
+])
 
-with open(path, "w") as f:
-    f.write(content)
+# 2. Restore the whole removed family, verbatim, into namespace thrust.
+classic_adaptors_shim = """#ifndef HYPRE_CUDA13_THRUST_CLASSIC_ADAPTORS_SHIM
+#define HYPRE_CUDA13_THRUST_CLASSIC_ADAPTORS_SHIM
+// Restore thrust::{identity,unary_function,binary_function,not1,not2},
+// removed wholesale in CCCL 3.0 / CUDA 13.
+namespace thrust {
 
-print("Patched utilities/memory.c for CUDA >= 13.0 cudaMemPrefetchAsync API")
+template <typename Arg, typename Result>
+struct unary_function
+{
+   typedef Arg argument_type;
+   typedef Result result_type;
+};
+
+template <typename Arg1, typename Arg2, typename Result>
+struct binary_function
+{
+   typedef Arg1 first_argument_type;
+   typedef Arg2 second_argument_type;
+   typedef Result result_type;
+};
+
+template <typename T>
+struct identity : public unary_function<T, T>
+{
+   __host__ __device__ T operator()(const T &x) const { return x; }
+};
+
+template <typename Predicate>
+class unary_negate : public unary_function<typename Predicate::argument_type, bool>
+{
+public:
+   __host__ __device__ explicit unary_negate(Predicate p) : pred(p) {}
+   __host__ __device__ bool operator()(const typename Predicate::argument_type &x) const { return !pred(x); }
+private:
+   Predicate pred;
+};
+
+template <typename Predicate>
+__host__ __device__ inline unary_negate<Predicate> not1(const Predicate &pred)
+{
+   return unary_negate<Predicate>(pred);
+}
+
+template <typename Predicate>
+class binary_negate : public binary_function<typename Predicate::first_argument_type,
+                                              typename Predicate::second_argument_type, bool>
+{
+public:
+   __host__ __device__ explicit binary_negate(Predicate p) : pred(p) {}
+   __host__ __device__ bool operator()(const typename Predicate::first_argument_type &x,
+                                        const typename Predicate::second_argument_type &y) const
+   {
+      return !pred(x, y);
+   }
+private:
+   Predicate pred;
+};
+
+template <typename Predicate>
+__host__ __device__ inline binary_negate<Predicate> not2(const Predicate &pred)
+{
+   return binary_negate<Predicate>(pred);
+}
+
+} // namespace thrust
+#endif
+"""
+
+classic_adaptor_names = (
+    "thrust::identity", "thrust::unary_function", "thrust::binary_function",
+    "thrust::not1", "thrust::not2",
+)
+
+patched = []
+for root, _dirs, files in os.walk("."):
+    for name in files:
+        if not name.endswith((".c", ".cpp", ".cu", ".h", ".hpp")):
+            continue
+        path = os.path.join(root, name)
+        with open(path) as f:
+            content = f.read()
+        if not any(sym in content for sym in classic_adaptor_names):
+            continue
+        content = classic_adaptors_shim + content
+        with open(path, "w") as f:
+            f.write(content)
+        patched.append(path)
+
+if not patched:
+    sys.exit("hypre CUDA-13 compat patch: no file uses any removed thrust classic-adaptor symbol -- "
+              "HYPRE source may have changed, this patch may no longer be needed")
+print(f"Patched {len(patched)} file(s) for removed thrust classic function adaptors: "
+      f"{', '.join(sorted(patched))}")
 PYEOF
 }
 
@@ -265,7 +378,7 @@ prepare_hypre_source() {
     extract_tarball "$tarball"
     pushd "${package_name}-${version}/src" || die "Error: Directory ${package_name}-${version}/src not found"
     if [[ "$CUDA_ENABLED" == "yes" ]]; then
-        patch_hypre_cuda13_prefetch
+        patch_hypre_cuda13_compat
     fi
 }
 
