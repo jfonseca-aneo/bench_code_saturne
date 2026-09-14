@@ -127,6 +127,18 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
         command -v nvcc >/dev/null 2>&1 || die "Error: CUDA_ENABLED=yes but nvcc not found on PATH (load the NVIDIA HPC SDK module first, or set CUDA_PATH)"
         CUDA_PATH="$(dirname "$(dirname "$(command -v nvcc)")")"
     fi
+
+    # NVHPC splits nvcc (under $CUDA_PATH/bin) from the actual CUDA runtime
+    # headers/libs (driver_types.h, cuda_runtime_api.h, libcudart, ...),
+    # which live under a separate cuda/<ver>/targets/<arch>/{include,lib}
+    # tree. cublas_api.h (and CUDA-aware Code_Saturne sources later) need
+    # both on the include path, or compiles fail with e.g. "cannot open
+    # source file driver_types.h" even with cuBLAS's own include dir set.
+    NVHPC_HOME_FOR_CUDA_TOOLKIT="$(dirname "$CUDA_PATH")"
+    DRIVER_TYPES_H="$(find "$NVHPC_HOME_FOR_CUDA_TOOLKIT/cuda" -name 'driver_types.h' 2>/dev/null | sort -V | tail -1)"
+    [[ -n "$DRIVER_TYPES_H" ]] || die "Error: could not locate driver_types.h under $NVHPC_HOME_FOR_CUDA_TOOLKIT/cuda"
+    CUDA_TOOLKIT_INCLUDE_DIR="$(dirname "$DRIVER_TYPES_H")"
+    CUDA_TOOLKIT_LIB_DIR="$(dirname "$CUDA_TOOLKIT_INCLUDE_DIR")/lib"
 fi
 
 # BLAS/LAPACK used to build HYPRE (kept as separate TPL_* libs since HYPRE's
@@ -158,8 +170,8 @@ fi
 set_compiler "$COMPILER" "$PERFORMANCE_LIBS" "$OPENMPI_PREFIX" #"CFLAGS=-march=znver4"
 
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
-    export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include"
-    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64"
+    export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include -I${CUDA_TOOLKIT_INCLUDE_DIR}"
+    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64 -L${CUDA_TOOLKIT_LIB_DIR}"
 fi
 
 # Fetch upstream release tarballs on demand into SOURCES_DIR instead of
