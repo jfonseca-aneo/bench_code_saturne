@@ -6,15 +6,18 @@
 # including HDF5, CGNS, MED, HYPRE, and Code_Saturne itself, using
 #
 # Usage:
-#   ./build_script.sh STACK_CONFIG OPENMPI_PREFIX SOURCES_DIR INSTALL_PREFIX [TEMP_DIR]
+#   ./build_script.sh STACK_CONFIG OPENMPI_PREFIX INSTALL_PREFIX [SOURCES_DIR] [TEMP_DIR]
 #
 # Arguments:
 #
-#   STACK_CONFIG    - file that will be sourced and that should define the following variables: 
+#   STACK_CONFIG    - file that will be sourced and that should define the following variables:
 #                     HDF5_VER, CGNS_VER=4.5.0, MED_VER=5.0.0, HYPRE_VER=2.33.0, CODE_SATURNE_VER, ARCH_PATH
-#   OPENMPI_PREFIX  - Path to the OpenMPI installation
-#   SOURCES_DIR     - Directory containing source tarballs
+#   OPENMPI_PREFIX  - Path to the OpenMPI installation, or "auto" (see below)
 #   INSTALL_PREFIX  - Target installation prefix
+#   SOURCES_DIR     - Optional cache dir for downloaded source tarballs
+#                     (defaults to INSTALL_PREFIX/sources; tarballs are fetched
+#                     on demand, so there's normally no need to point this at
+#                     a pre-populated directory)
 #   TEMP_DIR        - Optional temporary build directory (defaults to /tmp if not provided)
 
 set -ex  # Exit immediately on error
@@ -28,13 +31,14 @@ source "$SCRIPT_DIR/compilers-config.sh"
 show_help() {
     cat >&2 <<EOF
 
-Usage: $(basename "$0") STACK_CONFIG OPENMPI_PREFIX SOURCES_DIR INSTALL_PREFIX [TEMP_DIR]
+Usage: $(basename "$0") STACK_CONFIG OPENMPI_PREFIX INSTALL_PREFIX [SOURCES_DIR] [TEMP_DIR]
 
-    STACK_CONFIG    - file that will be sourced and that should define the following variables: 
+    STACK_CONFIG    - file that will be sourced and that should define the following variables:
                       HDF5_VER, CGNS_VER, MED_VER, HYPRE_VER, CODE_SATURNE_VER, ARCH_PATH
-    OPENMPI_PREFIX  - base dir of openmpi
-    SOURCES_DIR     - directory where the sources can be found
+    OPENMPI_PREFIX  - base dir of openmpi, or "auto" (see below)
     INSTALL_PREFIX  - the installation prefix
+    [SOURCES_DIR]   - cache dir for downloaded source tarballs (default:
+                      INSTALL_PREFIX/sources; created and populated on demand)
     [TEMP_DIR]      - temporary directory for the build, can be e.g. /dev/shm. If not provided, one will be created in /tmp/
 
 Requires AMD Optimizing compiler to be loaded when COMPILER=AMD
@@ -72,14 +76,19 @@ if [[ "$2" == "auto" ]]; then
 else
     OPENMPI_PREFIX="$(realpath $2)"
 fi
-SOURCES_DIR="$(realpath $3)"
-INSTALL_PREFIX=$4
+INSTALL_PREFIX=$3
+SOURCES_DIR="$4"
 TEMP_DIR="$5"
 
 is_nonempty STACK_CONFIG || (show_help; die "STACK_CONFIG undefined" )
 is_nonempty INSTALL_PREFIX || (show_help; die "INSTALL_PREFIX undefined" )
-is_nonempty SOURCES_DIR || (show_help; die "SOURCES_DIR undefined" )
 is_nonempty OPENMPI_PREFIX || (show_help; die "OPENMPI_PREFIX undefined" )
+
+if [[ -z "$SOURCES_DIR" ]]; then
+    SOURCES_DIR="$INSTALL_PREFIX/sources"
+fi
+mkdir -p "$SOURCES_DIR"
+SOURCES_DIR="$(realpath "$SOURCES_DIR")"
 
 # Load stack config
 source "$STACK_CONFIG"
