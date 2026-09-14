@@ -84,6 +84,13 @@ is_nonempty STACK_CONFIG || (show_help; die "STACK_CONFIG undefined" )
 is_nonempty INSTALL_PREFIX || (show_help; die "INSTALL_PREFIX undefined" )
 is_nonempty OPENMPI_PREFIX || (show_help; die "OPENMPI_PREFIX undefined" )
 
+# Guard against a leaked HDF5_ROOT/CMAKE_PREFIX_PATH from the calling shell
+# (e.g. a previous 'source install_sem3d_nvhpc.sh', which exports HDF5_ROOT)
+# silently overriding the -DHDF5_ROOT_DIR/-D*_DIR hints this script passes:
+# CMake's find_package() honors <Package>_ROOT env vars automatically
+# (CMP0074), with higher priority than an explicit PATHS hint.
+unset HDF5_ROOT CMAKE_PREFIX_PATH
+
 if [[ -z "$SOURCES_DIR" ]]; then
     SOURCES_DIR="$INSTALL_PREFIX/sources"
 fi
