@@ -481,9 +481,15 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
     HYPRE_CUDA_ARGS+=(-DCMAKE_CXX_STANDARD=17)
 fi
 
+# -DCMAKE_POSITION_INDEPENDENT_CODE=ON: without it, the static libHYPRE.a
+# (and its embedded CUDA device-code "fat binary" section, when CUDA is
+# enabled) isn't position-independent, and linking it into Code_Saturne's
+# shared libsaturne.so later fails with "relocation R_X86_64_32 against
+# .nvFatBinSegment can not be used when making a shared object".
 install_mpi_cmake_package "$SOURCES_DIR" hypre $HYPRE_VER prepare_hypre_source "$INSTALL_PREFIX/opt/hypre-$HYPRE_VER_S/arch/$ARCH_PATH" \
     -DHYPRE_ENABLE_HYPRE_LAPACK=OFF -DHYPRE_ENABLE_HYPRE_BLAS=OFF \
     -DTPL_LAPACK_LIBRARIES="$TPL_LAPACK_LIBRARIES" -DTPL_BLAS_LIBRARIES="$TPL_BLAS_LIBRARIES" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     "${HYPRE_CUDA_ARGS[@]}"
 
 # Code_Saturne 8.3.0-8.3.2 (the latest tagged release as of writing) predate
