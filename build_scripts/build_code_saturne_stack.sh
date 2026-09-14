@@ -224,6 +224,7 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
         -DHYPRE_CUDA_SM="$CUDA_ARCH_NUM"
         -DCMAKE_CUDA_COMPILER=nvcc
         -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH_NUM"
+        -DCUDA_PATH="$CUDA_PATH"
     )
 fi
 
