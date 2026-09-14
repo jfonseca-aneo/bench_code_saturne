@@ -195,6 +195,21 @@ if [[ "$OPENMPI_PREFIX" == "auto" ]]; then
     OPENMPI_PREFIX="$SET_COMPILER_RESOLVED_MPI_PATH"
 fi
 
+# Code_Saturne's --with-mpi=PATH assumes a flat PATH/include layout, but
+# NVHPC's HPC-X bundle nests the actual OpenMPI component one level deeper
+# (e.g. .../hpcx/ompi/include/mpi.h, not .../hpcx/include/mpi.h). Fine for
+# normal compiles (they go through the mpicc/mpicxx wrapper, which already
+# knows the real paths internally), but the separate nvcc-based CUDA build
+# rule needs an explicit, correct -I and doesn't get one from the bare
+# prefix. Locate the real mpi.h and pass its parent as --with-mpi instead.
+CS_MPI_PATH="$OPENMPI_PREFIX"
+if [[ "$COMPILER" == "NVHPC" ]]; then
+    MPI_H="$(find "$OPENMPI_PREFIX" -name 'mpi.h' 2>/dev/null | sort -V | tail -1)"
+    if [[ -n "$MPI_H" ]]; then
+        CS_MPI_PATH="$(dirname "$(dirname "$MPI_H")")"
+    fi
+fi
+
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
     export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include -I${CUDA_TOOLKIT_INCLUDE_DIR}"
     # -lcudart -lcublas -lcusparse -lcusolver -lcurand: cs_hypre.m4's link
@@ -498,7 +513,7 @@ fi
 
 install_auto_package "$SOURCES_DIR" code_saturne $CODE_SATURNE_VER prepare_cs_source "$INSTALL_PREFIX/code_saturne/$CODE_SATURNE_VER_S/arch/$ARCH_PATH" \
     --disable-gui \
-    --with-mpi="$OPENMPI_PREFIX" \
+    --with-mpi="$CS_MPI_PATH" \
     "${CS_BLAS_ARGS[@]}" \
     --with-hdf5="$HDF5_INSTALL_PATH" \
     --without-metis --without-scotch \
