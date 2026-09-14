@@ -359,12 +359,19 @@ install_mpi_cmake_package() {
     # export(PACKAGE ...) in some other project's build tree (e.g. one built
     # by install_sem3d_nvhpc.sh) -- entirely bypassing the *_ROOT_DIR/prefix
     # hints passed below.
+    #
+    # CMAKE_POLICY_DEFAULT_CMP0074=NEW: some vendored packages (e.g. MED
+    # 5.0.0) predate CMP0074 and don't set it themselves, so CMake silently
+    # *ignores* any <PackageName>_ROOT variable (e.g. HDF5_ROOT) passed to
+    # them with just a dev warning -- forcing the policy here makes it work
+    # without touching their CMakeLists.txt.
     cmake .. --debug-trycompile \
         -DCMAKE_INSTALL_PREFIX="$prefix" \
         -DCMAKE_C_COMPILER="$CC" \
         -DCMAKE_CXX_COMPILER="$CXX" \
         -DCMAKE_FORTRAN_COMPILER="$FC" \
         -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+        -DCMAKE_POLICY_DEFAULT_CMP0074=NEW \
         -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
         "$@" || die "CMake configuration failed"
         # "${expanded_args[@]}" || die "CMake configuration failed"
