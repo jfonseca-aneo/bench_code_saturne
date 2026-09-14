@@ -219,10 +219,14 @@ prepare_hypre_source() {
 # Install HYPRE
 HYPRE_CUDA_ARGS=()
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
+    # Don't pass -DCMAKE_CUDA_COMPILER here: a bare "nvcc" (no path) set via
+    # -D wins over (and breaks) the correctly-resolved absolute path that
+    # HYPRE_SetupCUDAToolkit.cmake computes itself from CUDA_PATH below
+    # (cache variables set via -D take priority over a project's own
+    # non-FORCE set(... CACHE ...) call).
     HYPRE_CUDA_ARGS=(
         -DHYPRE_ENABLE_CUDA=ON
         -DHYPRE_CUDA_SM="$CUDA_ARCH_NUM"
-        -DCMAKE_CUDA_COMPILER=nvcc
         -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH_NUM"
         -DCUDA_PATH="$CUDA_PATH"
     )
