@@ -139,6 +139,18 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
     [[ -n "$DRIVER_TYPES_H" ]] || die "Error: could not locate driver_types.h under $NVHPC_HOME_FOR_CUDA_TOOLKIT/cuda"
     CUDA_TOOLKIT_INCLUDE_DIR="$(dirname "$DRIVER_TYPES_H")"
     CUDA_TOOLKIT_LIB_DIR="$(dirname "$CUDA_TOOLKIT_INCLUDE_DIR")/lib"
+
+    # cuBLAS/cuSPARSE/cuSOLVER/cuRAND headers+libs live under a further
+    # separate math_libs/<ver>/targets/<arch>/{include,lib} tree (note:
+    # "lib", not "lib64"). Used both for Code_Saturne's own --with-cublas*
+    # configure flags below, and (via the global LDFLAGS just below) so
+    # cs_hypre.m4's link test can resolve the cusolver/cublas/curand/
+    # cusparse symbols libHYPRE.a needs (it was built with all four).
+    NVHPC_HOME_FOR_MATHLIBS="$(dirname "$CUDA_PATH")"
+    CUBLAS_HEADER="$(find "$NVHPC_HOME_FOR_MATHLIBS/math_libs" -name 'cublas_v2.h' 2>/dev/null | sort -V | tail -1)"
+    [[ -n "$CUBLAS_HEADER" ]] || die "Error: could not locate cublas_v2.h under $NVHPC_HOME_FOR_MATHLIBS/math_libs"
+    CUBLAS_INCLUDE_DIR="$(dirname "$CUBLAS_HEADER")"
+    CUBLAS_LIB_DIR="$(dirname "$CUBLAS_INCLUDE_DIR")/lib"
 fi
 
 # BLAS/LAPACK used to build HYPRE (kept as separate TPL_* libs since HYPRE's
@@ -175,12 +187,13 @@ set_compiler "$COMPILER" "$PERFORMANCE_LIBS" "$OPENMPI_PREFIX" #"CFLAGS=-march=z
 
 if [[ "$CUDA_ENABLED" == "yes" ]]; then
     export CPPFLAGS="${CPPFLAGS:-} -I${CUDA_PATH}/include -I${CUDA_TOOLKIT_INCLUDE_DIR}"
-    # -lcudart: cs_hypre.m4's link test only adds -lHYPRE (+ MPI libs), not
-    # any CUDA runtime lib, even though libHYPRE.a (built with
-    # HYPRE_ENABLE_CUDA) contains device code needing cudaGetDevice,
-    # __cudaRegisterVar and friends from libcudart -- so without this on
-    # the ambient LDFLAGS, that link test fails with undefined references.
-    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64 -L${CUDA_TOOLKIT_LIB_DIR} -lcudart"
+    # -lcudart -lcublas -lcusparse -lcusolver -lcurand: cs_hypre.m4's link
+    # test only adds -lHYPRE (+ MPI libs), not any CUDA runtime/math lib,
+    # even though libHYPRE.a (built with HYPRE_ENABLE_CUDA and all four of
+    # HYPRE_ENABLE_{CUBLAS,CUSPARSE,CUSOLVER,CURAND}) contains device code
+    # needing symbols from all of them -- so without this on the ambient
+    # LDFLAGS, that link test fails with undefined references.
+    export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64 -L${CUDA_TOOLKIT_LIB_DIR} -L${CUBLAS_LIB_DIR} -lcudart -lcublas -lcusparse -lcusolver -lcurand"
 fi
 
 # Fetch upstream release tarballs on demand into SOURCES_DIR instead of
@@ -460,15 +473,9 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
     # cs_cuda.m4's --with-cublas/--with-cusparse=PATH assumes a flat
     # PATH/include + PATH/lib64 layout, but NVHPC splits nvcc (under
     # $CUDA_PATH/bin) from the actual cuBLAS/cuSPARSE headers+libs, which
-    # live under a separate math_libs/<ver>/targets/<arch>/{include,lib}
-    # tree (note: "lib", not "lib64"). Locate it and use the more specific
+    # live under CUBLAS_INCLUDE_DIR/CUBLAS_LIB_DIR (math_libs/<ver>/
+    # targets/<arch>/{include,lib}, located earlier). Use the more specific
     # --with-*-include/--with-*-lib flags instead of --with-cublas=PATH.
-    NVHPC_HOME_FOR_MATHLIBS="$(dirname "$CUDA_PATH")"
-    CUBLAS_HEADER="$(find "$NVHPC_HOME_FOR_MATHLIBS/math_libs" -name 'cublas_v2.h' 2>/dev/null | sort -V | tail -1)"
-    [[ -n "$CUBLAS_HEADER" ]] || die "Error: could not locate cublas_v2.h under $NVHPC_HOME_FOR_MATHLIBS/math_libs"
-    CUBLAS_INCLUDE_DIR="$(dirname "$CUBLAS_HEADER")"
-    CUBLAS_LIB_DIR="$(dirname "$CUBLAS_INCLUDE_DIR")/lib"
-
     CS_CUDA_ARGS=(
         --enable-cuda
         --with-cublas-include="$CUBLAS_INCLUDE_DIR"
