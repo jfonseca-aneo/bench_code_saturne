@@ -126,6 +126,17 @@ if [[ "$CUDA_ENABLED" == "yes" ]]; then
     export LDFLAGS="${LDFLAGS:-} -L${CUDA_PATH}/lib64"
 fi
 
+# Fetch upstream release tarballs on demand into SOURCES_DIR instead of
+# shipping them alongside the scripts. Re-run-safe: skipped if already cached.
+ensure_source_tarball "$SOURCES_DIR" "hdf5-${HDF5_VER}.tar.gz" \
+    "https://github.com/HDFGroup/hdf5/archive/refs/tags/hdf5-${HDF5_VER//./_}.tar.gz"
+ensure_source_tarball "$SOURCES_DIR" "CGNS-${CGNS_VER}.tar.gz" \
+    "https://github.com/CGNS/CGNS/archive/refs/tags/v${CGNS_VER}.tar.gz"
+ensure_source_tarball "$SOURCES_DIR" "med-${MED_VER}.tar.bz2" \
+    "https://files.salome-platform.org/Salome/medfile/med-${MED_VER}.tar.bz2"
+ensure_source_tarball "$SOURCES_DIR" "hypre-${HYPRE_VER}.tar.gz" \
+    "https://github.com/hypre-space/hypre/archive/refs/tags/v${HYPRE_VER}.tar.gz"
+
 # Install HDF5
 install_mpi_cmake_package "$SOURCES_DIR" hdf5 $HDF5_VER none "$INSTALL_PREFIX/opt/hdf5-$HDF5_VER_S/arch/$ARCH_PATH" \
     -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DHDF5_BUILD_FORTRAN=ON -DHDF5_ENABLE_PARALLEL=ON

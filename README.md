@@ -52,11 +52,13 @@ See `CFG_code_saturne_8.3.0-h100.sh` for the GPU-specific variables
 `TPL_LAPACK_LIBRARIES`, `CS_BLAS_ARGS`) and adjust `TPL_BLAS_LIBRARIES` /
 `TPL_LAPACK_LIBRARIES` to a valid system LAPACK/BLAS install on your cluster.
 
-Note: `CODE_SATURNE_VER` in that config is a `git:<repo url>#<tag>` spec, so
-Code_Saturne itself is cloned from its official GitHub mirror
-(https://github.com/code-saturne/code_saturne) rather than read from a
-tarball under `SOURCES_DIR`; the other dependencies (HDF5, CGNS, MED, HYPRE)
-still come from tarballs there.
+Note: none of the dependencies are vendored in this repo. `CODE_SATURNE_VER`
+in that config is a `git:<repo url>#<tag>` spec, so Code_Saturne itself is
+cloned directly from its official GitHub mirror
+(https://github.com/code-saturne/code_saturne). HDF5, CGNS, MED and HYPRE
+are fetched automatically from their official upstream locations into
+`SOURCES_DIR` the first time you build (cached there for subsequent builds,
+see `ensure_source_tarball` in `build_common.sh`).
 
 4) Load the built Code_Saturne (via the resulting module file, or by adding
 its `bin/` to `PATH`) so that `code_saturne` is available before running the

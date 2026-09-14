@@ -178,6 +178,31 @@ find_tarball() {
 }
 
 
+# Download a tarball into a cache directory if it isn't already there, so
+# dependency archives don't need to be vendored/shipped alongside the scripts.
+# Arguments:
+#   $1 - Cache/source directory (created if missing)
+#   $2 - Filename to save it as (must match "<package>-<version>*" so
+#        find_tarball can locate it)
+#   $3 - URL to download it from
+ensure_source_tarball() {
+    local source_dir="$1"
+    local filename="$2"
+    local url="$3"
+
+    mkdir -p "$source_dir"
+    if [[ -f "$source_dir/$filename" ]]; then
+        return 0
+    fi
+
+    command -v curl > /dev/null 2>&1 || die "Error: curl is required to download $filename"
+
+    log "Downloading $filename from $url"
+    curl -fsSL --retry 3 --retry-delay 2 -o "$source_dir/$filename.part" "$url" \
+        || die "Failed to download $filename from $url"
+    mv "$source_dir/$filename.part" "$source_dir/$filename"
+}
+
 # ------------------------------------------------------------------------------
 # Source Preparation
 # ------------------------------------------------------------------------------
