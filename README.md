@@ -1,5 +1,5 @@
 
-# Code Saturne
+# Code Saturne (GPU / H100 build)
 
 ## How to build
 
@@ -7,43 +7,31 @@
 ```bash
 export CS_INSTALL_PREFIX="/lustre/software/benchmarking"
 ```
-2) Add your compiler to the `compilers_config.sh` if not there already
 
-3) Modify the `CFG_....sh` files to use your compiler(s) of choice
-
-4) Compile OpenMPI stack with 5.0.7
+2) Code_Saturne's CUDA support requires a CUDA-aware MPI. Rather than building
+an OpenMPI stack, use the OpenMPI ("hpcx", UCX-based) bundled with the
+NVIDIA HPC SDK:
 
 ```bash
-./build_openmpi_stack.sh CFG_ompi_5.0.7.sh ./sources $CS_INSTALL_PREFIX/ompi-5.0.7
+module purge
+module load nvhpc-hpcx   # name varies by site; check `module avail nvhpc`
 ```
 
-Or compile OMPI Improved stack
+Derive its prefix from `mpicc` and use that as `OPENMPI_PREFIX` (there is no
+OpenMPI stack to build for this path):
+
 ```bash
-./build_openmpi_stack.sh CFG_ompi_improved.sh ./sources $CS_INSTALL_PREFIX/ompi-improved
-```
-where the arguments are:
-```bash
-# Usage:
-#   ./build_openmpi_stack.sh STACK_CONFIG SOURCES_DIR INSTALL_PREFIX [TEMP_DIR]
-#
-#   STACK_CONFIG - Path to a file that will be sourced and that must define:
-#                  M4_VER, AUTOCONF_VER, AUTOMAKE_VER, LIBTOOL_VER, LIBFABRIC_VER,
-#                  OPENMPI_VER, COMPILER                  
-#   SOURCES_DIR     - Directory that contains the source tarballs
-#   INSTALL_PREFIX  - Installation prefix where packages will be installed
-#   [TEMP_DIR]      - Temporary directory for builds (e.g., /dev/shm). If not
-#                    supplied, a fresh temporary directory is created under /tmp.
+export OPENMPI_PREFIX="$(dirname "$(dirname "$(command -v mpicc)")")"
 ```
 
-5) Load the compiled OMPI using the module file, e.g.
+3) Build Code_Saturne and its dependencies with the H100 stack config, which
+selects the NVHPC compiler (`nvc`/`nvc++`/`nvfortran`) and enables CUDA for
+HYPRE and Code_Saturne (`CUDA_ARCH_NUM=90` for H100):
+
 ```bash
-module load $CS_INSTALL_PREIFX/ompi-5.0.7/etc/modulefiles/ompi-5.0.7
+./build_code_saturne_stack.sh CFG_code_saturne_8.3.0-h100.sh "$OPENMPI_PREFIX" ./sources $CS_INSTALL_PREFIX/saturne/h100
 ```
 
-6) Compile Code Saturne and a minimal set of dependencies (change to fit the CS and OMPI versions used)
-```bash
-./build_code_saturne_stack.sh CFG_code_saturne_8.3.0.sh $CS_INSTALL_PREFIX/ompi-5.0.7 ./sources $CS_INSTALL_PREFIX/saturne/ompi-5.0.7 
-```
 where the arguments are:
 ```bash
 # Usage:
@@ -59,54 +47,34 @@ where the arguments are:
 #   TEMP_DIR        - Optional temporary build directory (defaults to /tmp if not provided)
 ```
 
-## How to build for NVIDIA GPUs (H100)
-
-Code_Saturne's CUDA support requires a CUDA-aware MPI. Rather than building
-the OpenMPI stack above, use the OpenMPI ("hpcx", UCX-based) bundled with the
-NVIDIA HPC SDK:
-
-```bash
-module purge
-module load nvhpc-hpcx   # name varies by site; check `module avail nvhpc`
-```
-
-Derive its prefix from `mpicc` and use that as `OPENMPI_PREFIX` (skip
-`build_openmpi_stack.sh` entirely):
-
-```bash
-export OPENMPI_PREFIX="$(dirname "$(dirname "$(command -v mpicc)")")"
-```
-
-Then build Code_Saturne and its dependencies with the H100 stack config,
-which selects the NVHPC compiler (`nvc`/`nvc++`/`nvfortran`) and enables
-CUDA for HYPRE and Code_Saturne (`CUDA_ARCH_NUM=90` for H100):
-
-```bash
-./build_code_saturne_stack.sh CFG_code_saturne_8.3.0-h100.sh "$OPENMPI_PREFIX" ./sources $CS_INSTALL_PREFIX/saturne/h100
-```
-
 See `CFG_code_saturne_8.3.0-h100.sh` for the GPU-specific variables
 (`CUDA_ENABLED`, `CUDA_ARCH_NUM`, `CUDA_PATH`, `TPL_BLAS_LIBRARIES`,
 `TPL_LAPACK_LIBRARIES`, `CS_BLAS_ARGS`) and adjust `TPL_BLAS_LIBRARIES` /
 `TPL_LAPACK_LIBRARIES` to a valid system LAPACK/BLAS install on your cluster.
 
+4) Load the built Code_Saturne (via the resulting module file, or by adding
+its `bin/` to `PATH`) so that `code_saturne` is available before running the
+test case generation script below.
+
 ## How to run the tests cases
 
-On the root folder, run, with `code_saturne` on the PATH:
+On the root folder, run, with `code_saturne` (the H100/CUDA build) on the PATH:
 ```bash
-./generate_cases.sh 
+./generate_cases_gpu.sh
 ```
 
-This will compile the test case under SRC_04 and generate some test case
-inpouts on the `F128_04/RESU` directory. To launch the test on a Slurm cluster,
-go into the test case folder (this is important, the launch script uses as
-reference the submission directory) and do 
+This will compile the test case under `SRC_04` and generate one Slurm
+submission directory per node count under `F128_04_GPU/RESU`, sweeping GPU
+node count for a fixed mesh (strong scaling). To launch a run, go into the
+corresponding test case folder (this is important, the launch script uses
+the submission directory as reference) and do
 
 ```bash
 sbatch run_solver
 ```
 
-To change parameters for the tests, modify directy the `generate_cases.sh` script.
+To change parameters (GPUs per node, node counts, partition, mesh size),
+modify directly the `generate_cases_gpu.sh` script.
 
 The Code Saturne config file used is `DATA/setup.xml`. By default, I/O is
 disabled as much as possible, but there are some other config file at `DATA`
@@ -116,6 +84,3 @@ with I/O enabled.
 
 Code Saturne will write a performace log at `performance.log`, timings for each
 iteration at `timer_stats.csv` and residuals at `residuals.csv`.
-
-
-
